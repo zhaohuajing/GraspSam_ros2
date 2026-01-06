@@ -1,0 +1,83 @@
+- If need to build the docker:
+
+cd ~/graspnet_ws/src/GraspSam_ros2
+docker build -t graspsam:cu117 -f GraspSam_docker/Dockerfile .
+
+- Run the docker with folders mounted:
+
+docker run --rm -it --gpus all \
+  -v "$HOME/graspnet_ws":/root/graspnet_ws \
+  -w /root/graspnet_ws/src/GraspSam_ros2/compare_GraspSAM \
+  graspsam:cu117
+
+
+- inside container:
+
+source /opt/conda/etc/profile.d/conda.sh
+conda activate GraspSAM
+python -V
+which python
+
+- [or:]
+
+conda run -n GraspSAM python -V
+conda run -n GraspSAM pip --version
+
+
+---------
+
+- additionally installation from requirements:
+
+cd /root/graspnet_ws/src/GraspSam_ros2/compare_GraspSAM
+cp requirements.clean.txt /tmp/req.txt
+
+
+conda install -y -n GraspSAM -c conda-forge \
+  matplotlib "opencv<5" pandas scikit-learn scikit-image scipy numpy \
+  tifffile imagecodecs pyarrow pillow
+
+# remove stuff you installed via conda
+sed -i '/^matplotlib==/d;/^opencv-python==/d;/^opencv-python-headless==/d;/^pandas==/d;/^scikit-learn==/d;/^scikit-image==/d;/^scipy==/d;/^numpy==/d;/^tifffile==/d;/^imagecodecs==/d;/^pyarrow==/d;/^Pillow==/d' /tmp/req.txt
+# fix pydantic conflict (your file pins pydantic==2.6.4) :contentReference[oaicite:5]{index=5}
+sed -i 's/^pydantic==2\.6\.4$/pydantic==2.1.2/' /tmp/req.txt
+sed -i '/^pydantic_core==/d' /tmp/req.txt
+# fix ray for python 3.8 (your file pins ray==2.34.0) :contentReference[oaicite:6]{index=6}
+sed -i 's/^ray==2\.34\.0$/ray==2.10.0/' /tmp/req.txt
+# remove MultiScaleDeformableAttention pin (not a pip wheel) :contentReference[oaicite:7]{index=7}
+sed -i '/^MultiScaleDeformableAttention==/d' /tmp/req.txt
+
+
+python -m pip install --no-cache-dir -r /tmp/req.txt
+
+
+- Install MultiScaleDeformableAttention (source build approach)
+python -m pip install -U openmim
+python -m pip install -U "mmengine>=0.10.0" "mmcv>=2.0.0"
+# then install the deformable attention op from its upstream (repo-specific)
+
+
+----------------
+
+- sanity check for nvcc
+
+ls -lah /usr/local/cuda/bin/nvcc
+/usr/local/cuda/bin/nvcc --version
+
+
+-------------
+
+- for cuda version:
+
+# 1) Remove the wrong torch
+python -m pip uninstall -y torch torchvision torchaudio
+
+# 2) Install the correct CUDA 11.7 wheels explicitly
+python -m pip install --no-cache-dir \
+  --index-url https://download.pytorch.org/whl/cu117 \
+  torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2
+
+------------
+
+- additional packages
+pip install torch torchvision
+apt install tree

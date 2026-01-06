@@ -1,0 +1,41 @@
+GraspSAM Docker/Conda environment (workable snapshot)
+
+Base image:
+- nvidia/cuda:11.7.1-cudnn8-runtime-ubuntu20.04
+
+Conda env:
+- Name: GraspSAM
+- Prefix: /opt/conda/envs/GraspSAM
+- Python: 3.8.x (confirmed: python --version => 3.8.18)
+- Channel priority: conda-forge (strict)
+
+PyTorch stack (pip wheels):
+- torch==2.0.1+cu117
+- torchvision==0.15.2+cu117
+- CUDA runtime detected in container: 11.7 (nvcc --version => 11.7.x)
+- torch reports: torch.version.cuda == 11.7
+- torch.cuda.is_available() == True
+
+Key conda-provided runtime/toolchain bits:
+- conda list -n GraspSAM (saved separately as conda_list_workable.txt)
+- conda explicit spec (saved separately as conda_explicit_workable.txt)
+
+GroundingDINO (CUDA extension) build notes:
+- GroundingDINO was installed from source (local checkout) and required building the C++/CUDA extension:
+  - produces: groundingdino/_C.cpython-38-x86_64-linux-gnu.so
+  - after build, “from groundingdino.models.GroundingDINO import ms_deform_attn” imports OK
+- Build command used (run in the GroundingDINO repo root):
+  - python setup.py build_ext --inplace
+- Important: ensure compiler toolchain is compatible with CUDA 11.7
+  - CUDA 11.7 requires GCC/G++ < 12
+  - If conda toolchain is too new (e.g. x86_64-conda-linux-gnu-g++ 15.x), downgrade/pin to a compatible compiler or use system g++-9
+  - Verified successful link line used /usr/bin/g++-9
+
+Artifacts saved for reproducibility:
+- pip_freeze_workable.txt (pip freeze in active env)
+- conda_list_workable.txt (conda list -n GraspSAM)
+- conda_explicit_workable.txt (conda list --explicit -n GraspSAM)
+- requirements.workable.txt (hand-edited from cleaned requirements + fixes)
+
+
+GroundingDINO commit: 856dde20aee659246248e20734ef9ba5214f5e44

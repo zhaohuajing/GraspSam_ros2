@@ -1,0 +1,3 @@
+[submodule "compare_GraspSAM"]
+	path = compare_GraspSAM
+	url = https://github.com/zhaohuajing/compare_GraspSAM.git

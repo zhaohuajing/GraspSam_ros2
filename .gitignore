@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Conda / virtual env
+.env
+.env.*
+.venv
+conda-meta/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# CUDA / PyTorch
+*.so
+*.cu.o
+
+# Logs
+*.log
+
+# Data (DO NOT COMMIT)
+compare_GraspSAM/data/
+compare_GraspSAM/datasets/
+compare_GraspSAM/pretrained_checkpoint/
+compare_GraspSAM/split/
+
+# Results / outputs
+outputs/
+runs/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
