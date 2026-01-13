@@ -6,6 +6,7 @@ int32  no_grasps             # top-K grasps to test (see eval.py's detect_grasps
 bool   seen_set              # optional: use --seen-set
 ---
 # Response
-bool   ok
+bool   success
 string message
 string output_dir            # where eval.py wrote outputs (host path)
+graspsam_ros2/Grasp[] grasps

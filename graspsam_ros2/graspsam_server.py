@@ -100,23 +100,45 @@ class GraspSAMServer(Node):
         self._run(cmd, check=True)
 
     def _docker_exec_eval(self, dataset_root: str, checkpoint_path: str, sam_encoder_type: str, no_grasps: int, seen_set: bool):
+        # conda_prefix = (
+        #     "source /opt/conda/etc/profile.d/conda.sh && "
+        #     f"conda activate {shlex.quote(self.conda_env)} && "
+        # )
+
         conda_prefix = (
             "source /opt/conda/etc/profile.d/conda.sh && "
-            f"conda activate {shlex.quote(self.conda_env)} && "
+            f"conda activate {self.conda_env} && "
+            "export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH && "
         )
+
 
         # Only include flag if your eval.py supports it
         seen_flag = "--seen-set" if seen_set else ""
 
+        # cmd_str = (
+        #     f"{conda_prefix}"
+        #     f"python eval.py "
+        #     f"--root {shlex.quote(dataset_root)} "
+        #     f"--ckp_path {shlex.quote(checkpoint_path)} "
+        #     f"--sam-encoder-type {shlex.quote(sam_encoder_type)} "
+        #     f"--no-grasps {int(no_grasps)} "
+        #     f"{seen_flag}"
+        # ).strip()
+
+        eval_dir = (
+            f"{self.container_ws}/src/graspsam_ros2/compare_GraspSAM"
+        )
+
         cmd_str = (
             f"{conda_prefix}"
+            f"cd {shlex.quote(eval_dir)} && "
             f"python eval.py "
             f"--root {shlex.quote(dataset_root)} "
             f"--ckp_path {shlex.quote(checkpoint_path)} "
             f"--sam-encoder-type {shlex.quote(sam_encoder_type)} "
             f"--no-grasps {int(no_grasps)} "
-            f"{seen_flag}"
         ).strip()
+
 
         cmd = ["docker", "exec", self.container_name, "bash", "-lc", cmd_str]
         return self._run(cmd, check=True)
@@ -147,30 +169,45 @@ class GraspSAMServer(Node):
         with open(json_path, "r") as f:
             data = json.load(f)
 
-        grasps = data.get("grasps", data) if isinstance(data, dict) else data
-        if not isinstance(grasps, list):
-            raise ValueError(f"Unexpected JSON format. Expected list or dict with 'grasps'. Got: {type(grasps)}")
+        ros_grasps = []
 
-        ros_grasps: List[Grasp] = []
+        # Normalize format
+        if isinstance(data, dict) and "grasps" in data:
+            grasps = data["grasps"]
+        elif isinstance(data, list):
+            grasps = data
+        else:
+            self.get_logger().warn(f"Unknown grasp JSON format: {type(data)}")
+            return ros_grasps
 
         for g in grasps:
             msg = Grasp()
 
-            if isinstance(g, dict):
-                msg.x = float(g.get("x", 0.0))
-                msg.y = float(g.get("y", 0.0))
-                msg.angle = float(g.get("angle", 0.0))
-                msg.width = float(g.get("width", 0.0))
-                msg.quality = float(g.get("score", g.get("quality", 0.0)))
-                msg.depth = float(g.get("depth", 0.0))
-            else:
-                # assume list/tuple
+            # ---- Case 1: list format [x, y, angle, width, score]
+            if isinstance(g, (list, tuple)) and len(g) >= 4:
                 msg.x = float(g[0])
                 msg.y = float(g[1])
                 msg.angle = float(g[2])
                 msg.width = float(g[3])
                 msg.quality = float(g[4]) if len(g) > 4 else 0.0
-                msg.depth = float(g[5]) if len(g) > 5 else 0.0
+                msg.depth = 0.0
+
+            # ---- Case 2: dict with center
+            elif isinstance(g, dict):
+                if "center" in g:
+                    msg.x = float(g["center"][0])
+                    msg.y = float(g["center"][1])
+                else:
+                    msg.x = float(g.get("x", 0.0))
+                    msg.y = float(g.get("y", 0.0))
+
+                msg.angle = float(g.get("angle", 0.0))
+                msg.width = float(g.get("width", 0.0))
+                msg.quality = float(g.get("score", g.get("quality", 0.0)))
+                msg.depth = float(g.get("depth", 0.0))
+
+            else:
+                continue
 
             ros_grasps.append(msg)
 
@@ -213,7 +250,15 @@ class GraspSAMServer(Node):
                 response.output_dir = ""
                 return response
 
-            json_file = latest_dir / "grasps.json"
+            # json_file = latest_dir / "sample_0_grasps.json"
+
+            json_files = sorted(latest_dir.glob("*_grasps.json"))
+            if not json_files:
+                raise RuntimeError("No *_grasps.json found")
+
+            json_file = json_files[0]   # or loop over all
+
+
             if not json_file.exists():
                 response.success = False
                 response.message = (
