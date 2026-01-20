@@ -18,6 +18,11 @@ chmod +x $CONDA_PREFIX/etc/conda/activate.d/ld_library_path.sh
 echo "[3/4] Verify GLIBCXX"
 strings $CONDA_PREFIX/lib/libstdc++.so.6 | grep GLIBCXX_3.4.29
 
+# echo "[4/5] Install GroundingDINO"
+# cd ~/graspnet_ws/src/graspsam_ros2/compare_GraspSAM/GroundingDINO
+# pip install -e .
+# python setup.py build_ext --inplace
+
 echo "[4/4] Sanity check"
 python - <<'PY'
 from groundingdino.models import build_model
