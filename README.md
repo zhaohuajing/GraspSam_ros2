@@ -67,6 +67,35 @@ This script:
 
 ---
 
+## Runtime Setup (Required After Container Start)
+
+Due to a known interaction between:
+- Conda-provided libstdc++ (required by PIL / OpenCV),
+- System libstdc++ inside the Docker base image,
+- CUDA / PyTorch / GroundingDINO C++ extensions,
+activating the Conda environment alone is not sufficient. Specifically, `conda activate GraspSAM` may fall back to system `libstdc++.so.6`.
+
+To ensure the correct Conda libraries are used at runtime, an additional setup script must be executed.
+
+Recommended Workflow (One Command):
+
+After starting the container with:
+```bash
+./run_docker.sh
+```
+run the following once per container session:
+```bash
+./setup_runtime.sh
+```
+
+This script:
+- Activates the Conda environment
+- Ensures compatible libstdc++ and libgcc are installed
+- Forces the dynamic linker to prefer Conda libraries
+- Verifies GroundingDINO can be imported successfully
+
+---
+
 ## Activate Conda Environment
 
 Inside the container:
