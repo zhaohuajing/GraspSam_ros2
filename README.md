@@ -67,6 +67,22 @@ This script:
 
 ---
 
+## Run Docker Container
+
+Use the provided helper script:
+
+```bash
+./run_docker.sh
+```
+
+This script:
+- Removes any old container with the same name
+- Mounts the workspace and dataset folders (modify `./run_docker.sh` and set to your customer defined paths as needed) into the container
+- Sets the working directory to `compare_GraspSAM`
+- Launches an interactive shell
+
+---
+
 ## Runtime Setup (Required After Container Start)
 
 Due to a known interaction between:
@@ -85,7 +101,7 @@ After starting the container with:
 ```
 run the following once per container session:
 ```bash
-./setup_runtime.sh
+source setup_runtime.sh
 ```
 
 This script:
@@ -94,16 +110,9 @@ This script:
 - Forces the dynamic linker to prefer Conda libraries
 - Verifies GroundingDINO can be imported successfully
 
+Note: You must source the setup_runtime.sh script (i.e., `source setup_runtime.sh`), NOT execute it (i.e., `./setup_runtime.sh`). Otherwise, it runs in a subshell, and the `export LD_LIBRARY_PATH=...` and `conda activate GraspSAM` commands will NOT persist after the script exits.
+
 ---
-
-## Activate Conda Environment
-
-Inside the container:
-
-```bash
-source /opt/conda/etc/profile.d/conda.sh
-conda activate GraspSAM
-```
 
 ---
 

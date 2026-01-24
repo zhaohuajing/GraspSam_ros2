@@ -150,3 +150,9 @@ PY
 echo "=========================================="
 echo " GraspSAM runtime setup COMPLETE"
 echo "=========================================="
+
+# MANUALLY TYPE IN TERMINAL:
+# source /opt/conda/etc/profile.d/conda.sh
+# conda activate GraspSAM
+# export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:/usr/local/cuda/lib64:${LD_LIBRARY_PATH:-}"
+# echo $LD_LIBRARY_PATH
