@@ -18,7 +18,7 @@ docker run --rm -it \
   --ulimit memlock=-1 \
   --ulimit stack=67108864 \
   -v "$HOME/graspnet_ws:/root/graspnet_ws" \
-  -v "/media/csrobot/Data/Datasets/Grasp-Anything:/media/Grasp-Anything:ro" \
+  -v "/media/csrobot/Data1/Datasets/Grasp-Anything:/media/Grasp-Anything:ro" \
   -w /root/graspnet_ws/src/graspsam_ros2/graspsam_docker \
   ${IMAGE_NAME} #\
 # bash -lc "[ -f setup_runtime.sh ] && bash setup_runtime.sh || true; exec bash"
