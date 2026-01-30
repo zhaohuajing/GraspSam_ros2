@@ -1,3 +1,131 @@
+
+# GraspSAM ROS 2 Server (Docker-backed)
+
+## Overview
+
+This package provides a ROS 2 service wrapper for GraspSAM, allowing GraspSAM inference to be triggered from ROS 2 while running the actual model inside a persistent Docker container via `subprocess`.
+
+The design intentionally **decouples**:
+- the ROS 2 runtime (Ubuntu 24.04 / ROS 2 Jazzy, host), and
+- the GraspSAM runtime (Ubuntu 20.04, CUDA, Conda, PyTorch, GroundingDINO, etc., inside Docker)
+
+This avoids dependency conflicts while enabling seamless integration with ROS 2 planning pipelines (e.g., MoveIt).
+
+
+## High-Level Architecture
+
+```bash
+ROS 2 Client
+   |
+   |  (RunGraspSAM.srv)
+   v
+GraspSAM ROS 2 Server [graspsam_server.py]
+   |
+   |  subprocess [docker exec]
+   v
+Persistent Docker Container
+   |
+   |  conda activate GraspSAM
+   |  python eval.py / train.py
+   v
+Grasp Outputs [JSON / NPY / PNG]
+   |
+   v
+Returned to ROS 2 [paths + parsed grasps]
+
+```
+
+Key design choices:
+- Docker container is persistent (sleep infinity), not launched per request
+- Host workspace is bind-mounted into the container
+- ROS 2 never imports ML dependencies directly
+- All heavy libraries (CUDA, Torch, PIL, GL, etc.) live inside Docker
+
+### Repository Structure (Relevant Parts)
+```bash
+graspsam_ros2/
+├── graspsam_ros2/            # ROS 2 Python package
+│   ├── graspsam_server.py
+│   └── graspsam_server_minimal.py
+├── srv/
+│   └── RunGraspSAM.srv
+├── msg/
+│   └── Grasp.msg
+├── compare_GraspSAM/         # Original GraspSAM codebase
+│   ├── eval.py
+│   ├── train.py
+│   └── grasp_outputs/
+├── GraspSam_docker/
+│   └── run_docker.sh
+```
+
+---
+
+## Provided ROS Interfaces
+
+### Service: `graspsam_ros2/srv/RunGraspSAM`
+### Request:
+```bash
+string dataset_root          # relative to compare_GraspSAM/
+string checkpoint_path       # e.g. ./pretrained_checkpoint/mobile_sam.pt
+string sam_encoder_type      # vit_t, vit_b, vit_h, ...
+int32  no_grasps             # top-K grasps
+bool   seen_set              # optional dataset split flag
+```
+### Response:
+```bash
+bool   success
+string message               # stdout/stderr summary
+string output_dir            # host path to grasp_outputs/sampleX
+graspsam_ros2/msg/Grasp[] grasps   # parsed grasp results (if enabled)
+```
+### Message: `graspsam_ros2/msg/Grasp`
+
+---
+
+### Running the Server
+
+```bash
+source ~/graspnet_ws/install/setup.bash
+ros2 run graspsam_ros2 graspsam_server.py
+```
+You should see:
+```
+[INFO] [graspsam_server]: GraspSAM server ready (runs eval.py inside Docker).
+```
+
+### Calling the Service
+Example:
+```bash
+ros2 service call /run_graspsam graspsam_ros2/srv/RunGraspSAM "{
+  dataset_root: './datasets/Jacquard_Samples/Samples/1a9fa4c269cfcc1b738e43095496b061/',
+  checkpoint_path: './pretrained_checkpoint/mobile_sam.pt',
+  sam_encoder_type: 'vit_t',
+  no_grasps: 10,
+  seen_set: false
+}"
+```
+
+Outputs are written to:
+```compare_GraspSAM/grasp_outputs/<sample_id>/```
+
+### Output Layout
+GraspSAM writes outputs under:
+
+```bash
+compare_GraspSAM/grasp_outputs/
+  sampleX/
+    note.txt
+    sample_0_grasps.json
+    sample_0_grasps.npy
+    sample_0_maps.npz
+    sample_0.png
+    ...
+
+```
+---
+
+
 # GraspSAM + GroundingDINO Docker Setup
 
 ## Overview
