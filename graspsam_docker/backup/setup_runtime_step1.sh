@@ -14,6 +14,7 @@ pip install --no-cache-dir \
 
 apt-get update
 apt-get install -y libgl1 libglib2.0-0 ca-certificates
+
 rm -f /etc/apt/sources.list.d/cuda.list \
       /etc/apt/sources.list.d/nvidia-ml.list || true
 apt-get update
@@ -38,3 +39,5 @@ from groundingdino.models import build_model
 print("Environment OK")
 print("torch:", torch.__version__, "cuda:", torch.version.cuda)
 PY
+
+cd ~/graspnet_ws/src/graspsam_ros2/compare_GraspSAM
