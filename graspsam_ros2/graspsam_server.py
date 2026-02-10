@@ -99,7 +99,7 @@ class GraspSAMServer(Node):
         ]
         self._run(cmd, check=True)
 
-    def _docker_exec_eval(self, dataset_root: str, checkpoint_path: str, sam_encoder_type: str, no_grasps: int, seen_set: bool):
+    def _docker_exec_eval(self, dataset_root: str, dataset_name: str, checkpoint_path: str, sam_encoder_type: str, no_grasps: int, seen_set: bool):
         # conda_prefix = (
         #     "source /opt/conda/etc/profile.d/conda.sh && "
         #     f"conda activate {shlex.quote(self.conda_env)} && "
@@ -133,7 +133,10 @@ class GraspSAMServer(Node):
             f"{conda_prefix}"
             f"cd {shlex.quote(eval_dir)} && "
             f"python eval.py "
+            # f"python eval_edited_jac.py "
+            # f"python eval_jac_from_git.py "
             f"--root {shlex.quote(dataset_root)} "
+            f"--dataset_name {shlex.quote(dataset_name)} "
             f"--ckp_path {shlex.quote(checkpoint_path)} "
             f"--sam-encoder-type {shlex.quote(sam_encoder_type)} "
             f"--no-grasps {int(no_grasps)} "
@@ -220,6 +223,7 @@ class GraspSAMServer(Node):
         try:
             self.get_logger().info("Received GraspSAM request.")
             self.get_logger().info(f"  dataset_root: {request.dataset_root}")
+            self.get_logger().info(f"  dataset_name: {request.dataset_name}")
             self.get_logger().info(f"  checkpoint:   {request.checkpoint_path}")
             self.get_logger().info(f"  encoder:      {request.sam_encoder_type}")
             self.get_logger().info(f"  no_grasps:    {request.no_grasps}")
@@ -231,6 +235,7 @@ class GraspSAMServer(Node):
             # 2) Run eval.py inside container
             proc = self._docker_exec_eval(
                 dataset_root=request.dataset_root,
+                dataset_name=request.dataset_name,
                 checkpoint_path=request.checkpoint_path,
                 sam_encoder_type=request.sam_encoder_type,
                 no_grasps=int(request.no_grasps),

@@ -125,6 +125,25 @@ compare_GraspSAM/grasp_outputs/
 ```
 ---
 
+## Calling the Service with customer RGBD inputs
+
+Example:
+```bash
+ros2 service call /run_graspsam graspsam_ros2/srv/RunGraspSAM "{
+  dataset_root: './datasets/sample_scene_ucn',
+  checkpoint_path: './pretrained_checkpoint/mobile_sam.pt',
+  sam_encoder_type: 'vit_t',
+  no_grasps: 5,
+  dataset_name: from_rgbd 
+}"
+
+```
+
+Outputs are written to:
+```compare_GraspSAM/grasp_outputs/run_year-date-time/```
+
+---
+
 
 # GraspSAM + GroundingDINO Docker Setup
 

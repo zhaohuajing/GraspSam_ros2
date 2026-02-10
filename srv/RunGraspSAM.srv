@@ -1,5 +1,6 @@
 # Request
 string dataset_root          # e.g. ./datasets/Jacquard_Samples/Samples/1a9fa.../
+string dataset_name			 # e.g. jacquard or from_rgbd
 string checkpoint_path       # inside container working dir, e.g. ./pretrained_checkpoint/mobile_sam.pt
 string sam_encoder_type      # vit_b, vit_t, vit_h, ...
 int32  no_grasps             # top-K grasps to test (see eval.py's detect_grasps)
