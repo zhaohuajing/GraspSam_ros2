@@ -29,7 +29,7 @@ class GraspSAMServer(Node):
     def __init__(self):
         super().__init__("graspsam_server")
 
-        self.srv = self.create_service(RunGraspSAM, "run_graspsam", self.handle_request)
+        self.srv = self.create_service(RunGraspSAM, "/run_graspsam", self.handle_request)
         self.get_logger().info("GraspSAM server ready (runs eval.py inside Docker).")
 
         # Docker settings
@@ -113,7 +113,11 @@ class GraspSAMServer(Node):
 
 
         # Only include flag if your eval.py supports it
-        seen_flag = "--seen-set" if seen_set else ""
+        dataset_arg = ""
+        if dataset_name is not None and str(dataset_name).strip() != "":
+            dataset_arg = f"--dataset_name {str(dataset_name).strip()}"
+
+        seen_flag = " --seen-set" if bool(seen_set) else ""
 
         # cmd_str = (
         #     f"{conda_prefix}"
@@ -136,10 +140,12 @@ class GraspSAMServer(Node):
             # f"python eval_edited_jac.py "
             # f"python eval_jac_from_git.py "
             f"--root {shlex.quote(dataset_root)} "
-            f"--dataset_name {shlex.quote(dataset_name)} "
+            # f"--dataset_name {shlex.quote(dataset_name)} "
+            f"{dataset_arg} "
             f"--ckp_path {shlex.quote(checkpoint_path)} "
             f"--sam-encoder-type {shlex.quote(sam_encoder_type)} "
             f"--no-grasps {int(no_grasps)} "
+            f"{seen_flag}"
         ).strip()
 
 
