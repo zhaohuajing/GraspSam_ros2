@@ -5,6 +5,8 @@ project(graspsam_ros2)
 find_package(ament_cmake REQUIRED)
 find_package(rclpy REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+
 
 # Interfaces
 find_package(rosidl_default_generators REQUIRED)
@@ -12,6 +14,7 @@ find_package(rosidl_default_generators REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Grasp.msg"
   "srv/RunGraspSAM.srv"
+  DEPENDENCIES std_msgs geometry_msgs
 )
 
 ament_export_dependencies(rosidl_default_runtime)
@@ -23,6 +26,7 @@ install(
   PROGRAMS
     graspsam_ros2/graspsam_server.py
     graspsam_ros2/graspsam_server_minimal.py
+    graspsam_ros2/graspsam_cam2pose_server.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
