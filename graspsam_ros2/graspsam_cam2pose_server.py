@@ -449,17 +449,42 @@ class GraspSAMCam2PoseServer(Node):
                 if len(g.pos_cam) != 3 or len(g.quat_cam) != 4:
                     continue
 
+                # ----------------------------
+                # 1) Build T_opt from JSON pose (optical frame)
+                # ----------------------------
+                q_opt = [float(g.quat_cam[0]), float(g.quat_cam[1]), float(g.quat_cam[2]), float(g.quat_cam[3])]
+                T_opt = tft.quaternion_matrix(q_opt)
+                T_opt[0, 3] = float(g.pos_cam[0])
+                T_opt[1, 3] = float(g.pos_cam[1])
+                T_opt[2, 3] = float(g.pos_cam[2])
+
+                # ----------------------------
+                # 2) Convert optical -> ROS camera_link convention
+                # ----------------------------
+                T_cam = self.cgn_optical_to_ros_cam(T_opt)
+
+                # ----------------------------
+                # 3) Store Pose in camera_link frame
+                # ----------------------------
+
                 p = Pose()
-                p.position.x = float(g.pos_cam[0])
-                p.position.y = float(g.pos_cam[1])
-                p.position.z = float(g.pos_cam[2])
-                p.orientation.x = float(g.quat_cam[0])
-                p.orientation.y = float(g.quat_cam[1])
-                p.orientation.z = float(g.quat_cam[2])
-                p.orientation.w = float(g.quat_cam[3])
+                p.position.x = float(T_cam[0, 3])
+                p.position.y = float(T_cam[1, 3])
+                p.position.z = float(T_cam[2, 3])
+
+                q_cam = tft.quaternion_from_matrix(T_cam)
+                p.orientation.x = float(q_cam[0])
+                p.orientation.y = float(q_cam[1])
+                p.orientation.z = float(q_cam[2])
+                p.orientation.w = float(q_cam[3])
 
                 grasps_cam_pa.poses.append(p)
                 valid_indices.append(i)
+
+                # Optional: keep messages consistent with the converted camera_link pose
+                g.pos_cam = [p.position.x, p.position.y, p.position.z]
+                g.quat_cam = [p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w]
+                g.pose_cam = p
 
             # TF transform camera -> base
             grasps_base_pa = self.transform_pose_array(
