@@ -21,111 +21,6 @@ from graspsam_ros2.srv import RunGraspSAM
 from graspsam_ros2.msg import Grasp
 
 
-
-'''
-# Sample input command:
-
- - For Gazebo (Panda Sim):
-
-ros2 run graspsam_ros2 graspsam_cam2pose_server --ros-args \
-  -p base_frame:=simple_pedestal \
-  -p camera_frame:=rgbd_camera/camera_link/rgbd_camera \
-  -p use_optical_to_ros_cam:=true \
-  -p custom_no_gt:=1 \
-  -p sample_id:=0_from_rgbd \
-  -p mask_id:=0 \
-  -p remove_background:=0 \
-  -p apply_mask_to_q:=1 \
-  -p fx:=554.3827128226441 \
-  -p fy:=554.3827128226441 \
-  -p cx:=320.0 \
-  -p cy:=240.0 \
-  -p intr_w:=640 \
-  -p intr_h:=480
-
-- For Kinova Gen3 Real
-
-ros2 run graspsam_ros2 graspsam_cam2pose_server --ros-args \
-  -p base_frame:=base_link \
-  -p camera_frame:=camera_link \
-  -p use_optical_to_ros_cam:=true \
-  -p custom_no_gt:=1 \
-  -p sample_id:=0_from_rgbd \
-  -p mask_id:=6 \
-  -p remove_background:=0 \
-  -p apply_mask_to_q:=1 \
-  -p fx:=1297.673 \
-  -p fy:=1298.631 \
-  -p cx:=620.914 \
-  -p cy:=238.280 \
-  -p intr_w:=1280 \
-  -p intr_h:=720
-
-
-- Sample service call:
-
-ros2 service call /run_graspsam graspsam_ros2/srv/RunGraspSAM "{
-  dataset_root: './rgbd2jacquard/Kinova_Gen3_real_YCB/sample2_mnet_scene',
-  dataset_name: 'jacquard',
-  checkpoint_path: './trained_checkpoint/total_vit_t_default/jacquard/2026-02-28-04-40-49/epoch54.pth',
-  sam_encoder_type: 'vit_t',
-  no_grasps: 5,
-  seen_set: false
-}"
-
-ros2 service call /run_graspsam graspsam_ros2/srv/RunGraspSAM "{
-  dataset_root: './rgbd2jacquard/Kinova_Gen3_real_YCB/sample2_mnet_scene',
-  dataset_name: 'jacquard',
-  checkpoint_path: './trained_checkpoint/total_vit_t_default/jacquard/2026-02-28-04-40-49/epoch54.pth',
-  sam_encoder_type: 'vit_t',
-  no_grasps: 5,
-  seen_set: false,
-  custom_no_gt: true,
-  sample_id: '0_from_rgbd',
-  mask_id: 6,
-  remove_background: false,
-  apply_mask_to_q: true
-}"
-
-for which the server runs something like:
-
-python eval.py \
-  --root ./rgbd2jacquard/Kinova_Gen3_real_YCB/sample2_mnet_scene \
-  --dataset_name jacquard \
-  --ckp_path ./trained_checkpoint/total_vit_t_default/jacquard/2026-02-28-04-40-49/epoch54.pth \
-  --sam-encoder-type vit_t \
-  --no-grasps 5 \
-  --custom_no_gt 1 \
-  --sample-id 0_from_rgbd \
-  --mask-id 6 \
-  --remove_background 0 \
-  --apply_mask_to_q 1 \
-  --fx ... --fy ... --cx ... --cy ... --intr_w ... --intr_h ...
-
-'''
-
-def _env_bool(name: str, default: bool) -> bool:
-    """Parse bool-like environment variables safely."""
-    value = os.environ.get(name, None)
-    if value is None:
-        return bool(default)
-    return str(value).strip().lower() in ("1", "true", "yes", "y", "on")
-
-
-def _env_int(name: str, default: int) -> int:
-    value = os.environ.get(name, None)
-    if value is None or str(value).strip() == "":
-        return int(default)
-    return int(value)
-
-
-def _env_float(name: str, default: float) -> float:
-    value = os.environ.get(name, None)
-    if value is None or str(value).strip() == "":
-        return float(default)
-    return float(value)
-
-
 class GraspSAMCam2PoseServer(Node):
     """
     ROS2 service that runs GraspSAM eval.py inside a docker container via subprocess.
@@ -166,82 +61,9 @@ class GraspSAMCam2PoseServer(Node):
         # Host-side output root (where eval.py writes, visible on host via mount)
         self.host_output_root = Path(self.host_ws) / "src" / "graspsam_ros2" / "compare_GraspSAM" / "grasp_outputs"
 
-        # ------------------------------------------------------------------
-        # ROS parameters for Gazebo vs Kinova Gen3
-        #
-        # For Gazebo Panda examples you likely used:
-        #   base_frame   = simple_pedestal
-        #   camera_frame = rgbd_camera/camera_link/rgbd_camera
-        #
-        # For Kinova Gen3, set these at launch time to the TF frames actually
-        # present in your system, e.g.:
-        #   base_frame   = base_link              (or your MoveIt planning frame)
-        #   camera_frame = camera_link            (ROS camera_link-style frame)
-        #
-        # If camera_frame is an optical frame (x-right, y-down, z-forward),
-        # set use_optical_to_ros_cam:=false because TF already knows the optical
-        # frame convention. If camera_frame is camera_link-style, keep it true.
-        # ------------------------------------------------------------------
-        self.declare_parameter("base_frame", os.environ.get("GRASPSAM_BASE_FRAME", "simple_pedestal"))
-        self.declare_parameter("camera_frame", os.environ.get("GRASPSAM_CAMERA_FRAME", "rgbd_camera/camera_link/rgbd_camera"))
-        self.declare_parameter("use_optical_to_ros_cam", _env_bool("GRASPSAM_USE_OPTICAL_TO_ROS_CAM", True))
-
-        self.base_frame = self.get_parameter("base_frame").value
-        self.camera_frame = self.get_parameter("camera_frame").value
-        self.use_optical_to_ros_cam = bool(self.get_parameter("use_optical_to_ros_cam").value)
-
-        # ------------------------------------------------------------------
-        # eval.py options exposed as ROS parameters.
-        # This lets the same server work with the custom Jacquard-like Kinova
-        # RGB-D folders, without modifying RunGraspSAM.srv every time.
-        # ------------------------------------------------------------------
-        self.declare_parameter("eval_script", os.environ.get("GRASPSAM_EVAL_SCRIPT", "eval.py"))
-
-        # Custom no-GT Jacquard-like input mode.
-        # Default is enabled because your current Kinova/UOC pipeline uses
-        # RGB/depth/mask input without meaningful *_grasps.txt annotations.
-        self.declare_parameter("custom_no_gt", _env_int("GRASPSAM_CUSTOM_NO_GT", 1))
-        self.declare_parameter("sample_id", os.environ.get("GRASPSAM_SAMPLE_ID", "0_from_rgbd"))
-        self.declare_parameter("mask_id", _env_int("GRASPSAM_MASK_ID", 0))
-        self.declare_parameter("remove_background", _env_int("GRASPSAM_REMOVE_BACKGROUND", 0))
-        self.declare_parameter("apply_mask_to_q", _env_int("GRASPSAM_APPLY_MASK_TO_Q", 1))
-
-        # Camera intrinsics corresponding to the RGB-D image before your
-        # Jacquard-like pad-to-square/resize step. For Kinova, set these from
-        # the CameraInfo of the exact image stream/cropped image used by UOC.
-        self.declare_parameter("fx", _env_float("GRASPSAM_FX", 554.3827128226441))
-        self.declare_parameter("fy", _env_float("GRASPSAM_FY", 554.3827128226441))
-        self.declare_parameter("cx", _env_float("GRASPSAM_CX", 320.0))
-        self.declare_parameter("cy", _env_float("GRASPSAM_CY", 240.0))
-        self.declare_parameter("intr_w", _env_int("GRASPSAM_INTR_W", 640))
-        self.declare_parameter("intr_h", _env_int("GRASPSAM_INTR_H", 480))
-
-        self.eval_script = self.get_parameter("eval_script").value
-        self.custom_no_gt = int(self.get_parameter("custom_no_gt").value)
-        self.sample_id = str(self.get_parameter("sample_id").value)
-        self.mask_id = int(self.get_parameter("mask_id").value)
-        self.remove_background = int(self.get_parameter("remove_background").value)
-        self.apply_mask_to_q = int(self.get_parameter("apply_mask_to_q").value)
-
-        self.fx = float(self.get_parameter("fx").value)
-        self.fy = float(self.get_parameter("fy").value)
-        self.cx = float(self.get_parameter("cx").value)
-        self.cy = float(self.get_parameter("cy").value)
-        self.intr_w = int(self.get_parameter("intr_w").value)
-        self.intr_h = int(self.get_parameter("intr_h").value)
-
-        self.get_logger().info(
-            f"Frames: base_frame='{self.base_frame}', camera_frame='{self.camera_frame}', "
-            f"use_optical_to_ros_cam={self.use_optical_to_ros_cam}"
-        )
-        self.get_logger().info(
-            "eval.py options: "
-            f"custom_no_gt={self.custom_no_gt}, sample_id='{self.sample_id}', mask_id={self.mask_id}, "
-            f"remove_background={self.remove_background}, apply_mask_to_q={self.apply_mask_to_q}, "
-            f"intrinsics=({self.fx}, {self.fy}, {self.cx}, {self.cy}), "
-            f"intr_size=({self.intr_w}, {self.intr_h})"
-        )
-
+        # Define frames and buffer 
+        self.base_frame = 'simple_pedestal'   # or panda_link0 etc
+        self.camera_frame = 'rgbd_camera/camera_link/rgbd_camera'  # must match TF
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
@@ -293,100 +115,55 @@ class GraspSAMCam2PoseServer(Node):
         ]
         self._run(cmd, check=True)
 
-    def _to_container_path(self, path_like: str) -> str:
-        """
-        Map a host workspace path to the corresponding path inside the GraspSAM
-        Docker container. Relative paths and already-container paths are kept.
+    def _docker_exec_eval(self, dataset_root: str, dataset_name: str, checkpoint_path: str, sam_encoder_type: str, no_grasps: int, seen_set: bool):
+        # conda_prefix = (
+        #     "source /opt/conda/etc/profile.d/conda.sh && "
+        #     f"conda activate {shlex.quote(self.conda_env)} && "
+        # )
 
-        Examples:
-          /home/csrobot/graspnet_ws/src/... -> /root/graspnet_ws/src/...
-          ./rgbd2jacquard/...              -> ./rgbd2jacquard/...
-          /root/graspnet_ws/src/...        -> /root/graspnet_ws/src/...
-        """
-        if path_like is None:
-            return ""
-
-        p_str = os.path.expanduser(str(path_like).strip())
-        if p_str == "":
-            return p_str
-
-        # Keep relative paths relative to container_workdir.
-        if not os.path.isabs(p_str):
-            return p_str
-
-        # Already a container path.
-        container_ws = os.path.normpath(self.container_ws)
-        if os.path.normpath(p_str).startswith(container_ws):
-            return p_str
-
-        # Host workspace path -> container workspace path.
-        host_ws = os.path.normpath(os.path.expanduser(self.host_ws))
-        norm_p = os.path.normpath(p_str)
-        if norm_p == host_ws or norm_p.startswith(host_ws + os.sep):
-            rel = os.path.relpath(norm_p, host_ws)
-            return os.path.join(container_ws, rel)
-
-        # Otherwise leave unchanged; docker command will fail clearly if not mounted.
-        return p_str
-
-
-    def _docker_exec_eval(self, dataset_root: str, dataset_name: str, checkpoint_path: str,
-                          sam_encoder_type: str, no_grasps: int, seen_set: bool,
-                          custom_no_gt: bool, sample_id: str, mask_id: int,
-                          remove_background: bool, apply_mask_to_q: bool):
         conda_prefix = (
             "source /opt/conda/etc/profile.d/conda.sh && "
             f"conda activate {self.conda_env} && "
             "export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH && "
         )
 
-        # Map host paths from ROS request into container-visible paths.
-        dataset_root_c = self._to_container_path(dataset_root)
-        checkpoint_path_c = self._to_container_path(checkpoint_path)
 
+        # Only include flag if your eval.py supports it
         dataset_arg = ""
         if dataset_name is not None and str(dataset_name).strip() != "":
-            dataset_arg = f"--dataset_name {shlex.quote(str(dataset_name).strip())}"
+            dataset_arg = f"--dataset_name {str(dataset_name).strip()}"
 
         seen_flag = " --seen-set" if bool(seen_set) else ""
 
-        eval_dir = f"{self.container_ws}/src/graspsam_ros2/compare_GraspSAM"
+        # cmd_str = (
+        #     f"{conda_prefix}"
+        #     f"python eval.py "
+        #     f"--root {shlex.quote(dataset_root)} "
+        #     f"--ckp_path {shlex.quote(checkpoint_path)} "
+        #     f"--sam-encoder-type {shlex.quote(sam_encoder_type)} "
+        #     f"--no-grasps {int(no_grasps)} "
+        #     f"{seen_flag}"
+        # ).strip()
 
-        # Extra args for your current custom Kinova/UOC -> Jacquard-like workflow.
-        # These are supported by the custom eval.py / JacquardDataset we prepared.
-        # Per-request options. These intentionally use the service request values,
-        # not the startup ROS parameters, so FlexBE / ros2 service call can choose
-        # the target object mask at runtime.
-        extra_eval_args = [
-            f"--custom_no_gt {int(custom_no_gt)}",
-            f"--sample-id {shlex.quote(str(sample_id))}",
-            f"--mask-id {int(mask_id)}",
-            f"--remove_background {int(remove_background)}",
-            f"--apply_mask_to_q {int(apply_mask_to_q)}",
-            f"--fx {float(self.fx)}",
-            f"--fy {float(self.fy)}",
-            f"--cx {float(self.cx)}",
-            f"--cy {float(self.cy)}",
-            f"--intr_w {int(self.intr_w)}",
-            f"--intr_h {int(self.intr_h)}",
-        ]
-        extra_eval_arg_str = " ".join(extra_eval_args)
+        eval_dir = (
+            f"{self.container_ws}/src/graspsam_ros2/compare_GraspSAM"
+        )
 
         cmd_str = (
             f"{conda_prefix}"
             f"cd {shlex.quote(eval_dir)} && "
-            f"python {shlex.quote(str(self.eval_script))} "
-            f"--root {shlex.quote(dataset_root_c)} "
+            f"python eval.py "
+            # f"python eval_edited_jac.py "
+            # f"python eval_jac_from_git.py "
+            f"--root {shlex.quote(dataset_root)} "
+            # f"--dataset_name {shlex.quote(dataset_name)} "
             f"{dataset_arg} "
-            f"--ckp_path {shlex.quote(checkpoint_path_c)} "
+            f"--ckp_path {shlex.quote(checkpoint_path)} "
             f"--sam-encoder-type {shlex.quote(sam_encoder_type)} "
             f"--no-grasps {int(no_grasps)} "
-            f"{extra_eval_arg_str} "
             f"{seen_flag}"
         ).strip()
 
-        self.get_logger().info(f"Running GraspSAM in Docker with root: {dataset_root_c}")
-        self.get_logger().info(f"Docker eval command:\n{cmd_str}")
 
         cmd = ["docker", "exec", self.container_name, "bash", "-lc", cmd_str]
         return self._run(cmd, check=True)
@@ -606,11 +383,6 @@ class GraspSAMCam2PoseServer(Node):
             self.get_logger().info(f"  encoder:      {request.sam_encoder_type}")
             self.get_logger().info(f"  no_grasps:    {request.no_grasps}")
             self.get_logger().info(f"  seen_set:     {request.seen_set}")
-            self.get_logger().info(f"  custom_no_gt:      {request.custom_no_gt}")
-            self.get_logger().info(f"  sample_id:         {request.sample_id}")
-            self.get_logger().info(f"  mask_id:           {request.mask_id}")
-            self.get_logger().info(f"  remove_background: {request.remove_background}")
-            self.get_logger().info(f"  apply_mask_to_q:   {request.apply_mask_to_q}")
 
             # 1) Ensure docker is running
             self._ensure_container()
@@ -623,11 +395,6 @@ class GraspSAMCam2PoseServer(Node):
                 sam_encoder_type=request.sam_encoder_type,
                 no_grasps=int(request.no_grasps),
                 seen_set=bool(request.seen_set),
-                custom_no_gt=bool(request.custom_no_gt),
-                sample_id=str(request.sample_id),
-                mask_id=int(request.mask_id),
-                remove_background=bool(request.remove_background),
-                apply_mask_to_q=bool(request.apply_mask_to_q),
             )
 
             # 3) Locate latest output dir on HOST
@@ -692,20 +459,12 @@ class GraspSAMCam2PoseServer(Node):
                 T_opt[2, 3] = float(g.pos_cam[2])
 
                 # ----------------------------
-                # 2) Convert optical -> ROS camera_link convention if needed.
-                #
-                # JSON poses from eval.py are in camera optical coordinates.
-                # If self.camera_frame is a ROS camera_link-style frame, keep
-                # use_optical_to_ros_cam=True. If self.camera_frame is already
-                # an optical TF frame, set use_optical_to_ros_cam=False.
+                # 2) Convert optical -> ROS camera_link convention
                 # ----------------------------
-                if self.use_optical_to_ros_cam:
-                    T_cam = self.cgn_optical_to_ros_cam(T_opt)
-                else:
-                    T_cam = T_opt
+                T_cam = self.cgn_optical_to_ros_cam(T_opt)
 
                 # ----------------------------
-                # 3) Store Pose in self.camera_frame
+                # 3) Store Pose in camera_link frame
                 # ----------------------------
 
                 p = Pose()

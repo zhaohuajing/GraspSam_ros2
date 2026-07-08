@@ -25,7 +25,6 @@ ament_export_dependencies(rosidl_default_runtime)
 install(
   PROGRAMS
     graspsam_ros2/graspsam_server.py
-#     graspsam_ros2/graspsam_server_minimal.py
     graspsam_ros2/graspsam_cam2pose_server.py
   DESTINATION lib/${PROJECT_NAME}
 )

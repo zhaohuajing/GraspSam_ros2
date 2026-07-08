@@ -12,6 +12,8 @@ pip install --no-cache-dir \
   torchvision==0.15.2 \
   torchaudio==2.0.2
 
+pip install open3d
+
 apt-get update
 apt-get install -y libgl1 libglib2.0-0 ca-certificates
 

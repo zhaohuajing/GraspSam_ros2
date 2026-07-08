@@ -1,13 +1,21 @@
 # Request
-string dataset_root          # e.g. ./datasets/Jacquard_Samples/Samples/1a9fa.../
-string dataset_name			 # e.g. jacquard or from_rgbd
-string checkpoint_path       # inside container working dir, e.g. ./pretrained_checkpoint/mobile_sam.pt
-string sam_encoder_type      # vit_b, vit_t, vit_h, ...
-int32  no_grasps             # top-K grasps to test (see eval.py's detect_grasps)
-bool   seen_set              # optional: use --seen-set
+string dataset_root
+string dataset_name
+string checkpoint_path
+string sam_encoder_type
+int32  no_grasps
+bool   seen_set
+
+# Custom Jacquard-like / UOC-derived input options
+bool   custom_no_gt
+string sample_id
+int32  mask_id
+bool   remove_background
+bool   apply_mask_to_q
+
 ---
 # Response
 bool   success
 string message
-string output_dir            # where eval.py wrote outputs (host path)
+string output_dir
 graspsam_ros2/Grasp[] grasps

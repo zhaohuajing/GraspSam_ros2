@@ -331,9 +331,7 @@ class GraspSAMCam2PoseServer(Node):
 
 
     def _docker_exec_eval(self, dataset_root: str, dataset_name: str, checkpoint_path: str,
-                          sam_encoder_type: str, no_grasps: int, seen_set: bool,
-                          custom_no_gt: bool, sample_id: str, mask_id: int,
-                          remove_background: bool, apply_mask_to_q: bool):
+                          sam_encoder_type: str, no_grasps: int, seen_set: bool):
         conda_prefix = (
             "source /opt/conda/etc/profile.d/conda.sh && "
             f"conda activate {self.conda_env} && "
@@ -354,15 +352,12 @@ class GraspSAMCam2PoseServer(Node):
 
         # Extra args for your current custom Kinova/UOC -> Jacquard-like workflow.
         # These are supported by the custom eval.py / JacquardDataset we prepared.
-        # Per-request options. These intentionally use the service request values,
-        # not the startup ROS parameters, so FlexBE / ros2 service call can choose
-        # the target object mask at runtime.
         extra_eval_args = [
-            f"--custom_no_gt {int(custom_no_gt)}",
-            f"--sample-id {shlex.quote(str(sample_id))}",
-            f"--mask-id {int(mask_id)}",
-            f"--remove_background {int(remove_background)}",
-            f"--apply_mask_to_q {int(apply_mask_to_q)}",
+            f"--custom_no_gt {int(self.custom_no_gt)}",
+            f"--sample-id {shlex.quote(str(self.sample_id))}",
+            f"--mask-id {int(self.mask_id)}",
+            f"--remove_background {int(self.remove_background)}",
+            f"--apply_mask_to_q {int(self.apply_mask_to_q)}",
             f"--fx {float(self.fx)}",
             f"--fy {float(self.fy)}",
             f"--cx {float(self.cx)}",
@@ -386,7 +381,7 @@ class GraspSAMCam2PoseServer(Node):
         ).strip()
 
         self.get_logger().info(f"Running GraspSAM in Docker with root: {dataset_root_c}")
-        self.get_logger().info(f"Docker eval command:\n{cmd_str}")
+        self.get_logger().debug(f"Docker eval command: {cmd_str}")
 
         cmd = ["docker", "exec", self.container_name, "bash", "-lc", cmd_str]
         return self._run(cmd, check=True)
@@ -606,11 +601,6 @@ class GraspSAMCam2PoseServer(Node):
             self.get_logger().info(f"  encoder:      {request.sam_encoder_type}")
             self.get_logger().info(f"  no_grasps:    {request.no_grasps}")
             self.get_logger().info(f"  seen_set:     {request.seen_set}")
-            self.get_logger().info(f"  custom_no_gt:      {request.custom_no_gt}")
-            self.get_logger().info(f"  sample_id:         {request.sample_id}")
-            self.get_logger().info(f"  mask_id:           {request.mask_id}")
-            self.get_logger().info(f"  remove_background: {request.remove_background}")
-            self.get_logger().info(f"  apply_mask_to_q:   {request.apply_mask_to_q}")
 
             # 1) Ensure docker is running
             self._ensure_container()
@@ -623,11 +613,6 @@ class GraspSAMCam2PoseServer(Node):
                 sam_encoder_type=request.sam_encoder_type,
                 no_grasps=int(request.no_grasps),
                 seen_set=bool(request.seen_set),
-                custom_no_gt=bool(request.custom_no_gt),
-                sample_id=str(request.sample_id),
-                mask_id=int(request.mask_id),
-                remove_background=bool(request.remove_background),
-                apply_mask_to_q=bool(request.apply_mask_to_q),
             )
 
             # 3) Locate latest output dir on HOST
