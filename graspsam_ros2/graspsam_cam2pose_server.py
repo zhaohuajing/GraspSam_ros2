@@ -182,9 +182,14 @@ class GraspSAMCam2PoseServer(Node):
         # set use_optical_to_ros_cam:=false because TF already knows the optical
         # frame convention. If camera_frame is camera_link-style, keep it true.
         # ------------------------------------------------------------------
-        self.declare_parameter("base_frame", os.environ.get("GRASPSAM_BASE_FRAME", "simple_pedestal"))
-        self.declare_parameter("camera_frame", os.environ.get("GRASPSAM_CAMERA_FRAME", "rgbd_camera/camera_link/rgbd_camera"))
-        self.declare_parameter("use_optical_to_ros_cam", _env_bool("GRASPSAM_USE_OPTICAL_TO_ROS_CAM", True))
+        # self.declare_parameter("base_frame", os.environ.get("GRASPSAM_BASE_FRAME", "simple_pedestal"))
+        # self.declare_parameter("camera_frame", os.environ.get("GRASPSAM_CAMERA_FRAME", "rgbd_camera/camera_link/rgbd_camera"))
+        # self.declare_parameter("use_optical_to_ros_cam", _env_bool("GRASPSAM_USE_OPTICAL_TO_ROS_CAM", True))
+
+
+        self.declare_parameter("base_frame", os.environ.get("GRASPSAM_BASE_FRAME", "base_link"))
+        self.declare_parameter("camera_frame", os.environ.get("GRASPSAM_CAMERA_FRAME", "camera_link"))
+        self.declare_parameter("use_optical_to_ros_cam", _env_bool("GRASPSAM_USE_OPTICAL_TO_ROS_CAM", False))
 
         self.base_frame = self.get_parameter("base_frame").value
         self.camera_frame = self.get_parameter("camera_frame").value

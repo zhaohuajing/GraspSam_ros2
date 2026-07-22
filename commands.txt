@@ -1,0 +1,35 @@
+ROS2 service call:
+
+terminal 1:
+ros2 run graspsam_ros2 graspsam_cam2pose_server.py
+
+terminal 2:
+ros2 service call /run_graspsam graspsam_ros2/srv/RunGraspSAM "{
+  dataset_root: './rgbd2jacquard/Kinova_Gen3_real_YCB/sample2_mnet_scene',
+  dataset_name: 'jacquard',
+  checkpoint_path: './trained_checkpoint/total_vit_t_default/jacquard/2026-02-28-04-40-49/epoch54.pth',
+  sam_encoder_type: 'vit_t',
+  no_grasps: 1,
+  seen_set: false,
+  custom_no_gt: true,
+  sample_id: '0_from_rgbd',
+  mask_id: 4,
+  remove_background: false,
+  apply_mask_to_q: true}"
+
+terminal 3:
+python3 graspsam_result_plotter.py   --rgb ./rgbd2jacquard/Kinova_Gen3_real_YCB/sample2_mnet_scene/0_from_rgbd_RGB.png   --depth ./rgbd2jacquard/Kinova_Gen3_real_YCB/sample2_mnet_scene/0_from_rgbd_perfect_depth.tiff   --grasps ./grasp_outputs/run_20260709_203049/sample_0_grasps.json  --top_k 10   --stride 2   --frame_mode optical
+
+
+with Kinova gen3 and flexbe, add:
+
+ros2 launch armada_bringup moveit_core.launch.py   robot_source:=kortex   robot_model:=gen3   robot_make:=gen3   planning_group:=manipulator   base_frame:=base_link   ee_link:=end_effector_link   use_sim_time:=False   launch_move_group:=False   launch_rviz:=False   robot_ip:=10.10.10.43   use_fake_hardware:=False
+
+ros2 launch armada_bringup modules_combo_learned.launch.py
+
+ros2 launch armada_bringup flexbe.launch.py headless:=true 
+ - load behavior UnseenObjClusterGraspSamPipeline
+
+ros2 launch kinova_gen3_7dof_robotiq_2f_85_moveit_config robot.launch.py   robot_ip:=10.10.10.43   use_fake_hardware:=false launch_rviz:=true
+
+ros2 launch kinova_vision kinova_vision.launch.py device:=10.10.10.43 depth_registration:=true
