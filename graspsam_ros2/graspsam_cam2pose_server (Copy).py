@@ -194,40 +194,11 @@ class GraspSAMCam2PoseServer(Node):
 
         self.declare_parameter("use_optical_to_ros_cam", _env_bool("GRASPSAM_USE_OPTICAL_TO_ROS_CAM", False))
 
-        # Optional fixed transform from the GraspSAM/CGN grasp frame to the
-        # actual robot gripper frame.  These affect orientation only.
-        self.declare_parameter('apply_gripper_frame_offset', False)
-        self.declare_parameter('gripper_offset_rx_deg', 0.0)
-        self.declare_parameter('gripper_offset_ry_deg', 0.0)
-        self.declare_parameter('gripper_offset_rz_deg', 0.0)
-
-        # Optional right-handed X/Y axis swap in the grasp/gripper frame.
-        # A pure X<->Y swap is a reflection (det=-1), so this uses the same
-        # right-handed 90-deg Z rotation convention as the earlier CGN-style
-        # SceneReplica swap:
-        #   x_new = y_old, y_new = -x_old, z_new = z_old
-        #
-        # Keep apply_scene_replica_xy_swap as a backward-compatible alias.
-        self.declare_parameter('apply_gripper_frame_xy_swap', True)
         self.declare_parameter('apply_scene_replica_xy_swap', False)
 
         self.base_frame = self.get_parameter("base_frame").value
         self.camera_frame = self.get_parameter("camera_frame").value
         self.use_optical_to_ros_cam = bool(self.get_parameter("use_optical_to_ros_cam").value)
-
-        self.apply_gripper_frame_offset = bool(
-            self.get_parameter('apply_gripper_frame_offset').value
-        )
-        self.gripper_offset_rx_deg = float(self.get_parameter('gripper_offset_rx_deg').value)
-        self.gripper_offset_ry_deg = float(self.get_parameter('gripper_offset_ry_deg').value)
-        self.gripper_offset_rz_deg = float(self.get_parameter('gripper_offset_rz_deg').value)
-
-        self.apply_gripper_frame_xy_swap = bool(
-            self.get_parameter('apply_gripper_frame_xy_swap').value
-        )
-        self.apply_scene_replica_xy_swap = bool(
-            self.get_parameter('apply_scene_replica_xy_swap').value
-        )
 
         # ------------------------------------------------------------------
         # eval.py options exposed as ROS parameters.
@@ -269,6 +240,10 @@ class GraspSAMCam2PoseServer(Node):
         self.intr_w = int(self.get_parameter("intr_w").value)
         self.intr_h = int(self.get_parameter("intr_h").value)
 
+        self.apply_scene_replica_xy_swap = bool(
+            self.get_parameter('apply_scene_replica_xy_swap').value
+        )
+
         self.get_logger().info(
             f"Frames: base_frame='{self.base_frame}', camera_frame='{self.camera_frame}', "
             f"use_optical_to_ros_cam={self.use_optical_to_ros_cam}"
@@ -279,14 +254,6 @@ class GraspSAMCam2PoseServer(Node):
             f"remove_background={self.remove_background}, apply_mask_to_q={self.apply_mask_to_q}, "
             f"intrinsics=({self.fx}, {self.fy}, {self.cx}, {self.cy}), "
             f"intr_size=({self.intr_w}, {self.intr_h})"
-        )
-        self.get_logger().info(
-            "Gripper-frame pose options: "
-            f"apply_gripper_frame_offset={self.apply_gripper_frame_offset}, "
-            f"rx/ry/rz_deg=({self.gripper_offset_rx_deg}, "
-            f"{self.gripper_offset_ry_deg}, {self.gripper_offset_rz_deg}), "
-            f"apply_gripper_frame_xy_swap={self.apply_gripper_frame_xy_swap}, "
-            f"apply_scene_replica_xy_swap(alias)={self.apply_scene_replica_xy_swap}"
         )
 
         self.tf_buffer = tf2_ros.Buffer()
@@ -754,44 +721,6 @@ class GraspSAMCam2PoseServer(Node):
                     T_cam = self.cgn_optical_to_ros_cam(T_opt)
                 else:
                     T_cam = T_opt
-
-
-                # ----- Optional fixed grasp-frame -> robot-gripper-frame correction -----
-                #
-                # T_cam is camera_frame -> GraspSAM/CGN grasp frame.
-                # Right-multiplying by T_gripper_offset gives:
-                #   camera_frame -> robot gripper frame
-                #
-                # Translation is intentionally left unchanged; these parameters only
-                # adjust the output orientation used by MoveIt.
-                T_gripper_offset = np.eye(4, dtype=np.float64)
-
-                if self.apply_gripper_frame_offset:
-                    rx, ry, rz = np.deg2rad([
-                        self.gripper_offset_rx_deg,
-                        self.gripper_offset_ry_deg,
-                        self.gripper_offset_rz_deg,
-                    ])
-                    T_gripper_offset = T_gripper_offset @ tft.euler_matrix(rx, ry, rz, 'sxyz')
-
-                # Optional right-handed X/Y axis swap.  The legacy
-                # apply_scene_replica_xy_swap parameter is kept as an alias for
-                # compatibility with your earlier Contact-GraspNet server.
-                if self.apply_gripper_frame_xy_swap or self.apply_scene_replica_xy_swap:
-                    swap_xy = np.array([
-                        [0.,  1., 0., 0.],
-                        [-1., 0., 0., 0.],
-                        [0.,  0., 1., 0.],
-                        [0.,  0., 0., 1.],
-                    ], dtype=np.float64)
-                    T_gripper_offset = T_gripper_offset @ swap_xy
-
-                if (self.apply_gripper_frame_offset or
-                        self.apply_gripper_frame_xy_swap or
-                        self.apply_scene_replica_xy_swap):
-                    T_cam = T_cam @ T_gripper_offset
-                # -----------------------------------------------------------------------
-
 
                 # ----------------------------
                 # 3) Store Pose in self.camera_frame
