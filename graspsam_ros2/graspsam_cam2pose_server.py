@@ -188,9 +188,9 @@ class GraspSAMCam2PoseServer(Node):
 
 
         self.declare_parameter("base_frame", os.environ.get("GRASPSAM_BASE_FRAME", "base_link"))
-        # self.declare_parameter("camera_frame", os.environ.get("GRASPSAM_CAMERA_FRAME", "camera_link")) # camera link resulted in OMPL grasp pose offset
+        self.declare_parameter("camera_frame", os.environ.get("GRASPSAM_CAMERA_FRAME", "camera_link")) # camera link resulted in OMPL grasp pose offset
         # self.declare_parameter("camera_frame", os.environ.get("GRASPSAM_CAMERA_FRAME", "camera_depth_frame")) # try using camera_depth_frame instead
-        self.declare_parameter("camera_frame", os.environ.get("GRASPSAM_CAMERA_FRAME", "camera_compensate_frame")) # try using camera_depth_frame instead
+        # self.declare_parameter("camera_frame", os.environ.get("GRASPSAM_CAMERA_FRAME", "camera_compensate_frame")) # try using camera_depth_frame instead; worked well before adjusting kortex version of TF for color-depth mapping, not after
 
         self.declare_parameter("use_optical_to_ros_cam", _env_bool("GRASPSAM_USE_OPTICAL_TO_ROS_CAM", False))
 
@@ -208,7 +208,7 @@ class GraspSAMCam2PoseServer(Node):
         #   x_new = y_old, y_new = -x_old, z_new = z_old
         #
         # Keep apply_scene_replica_xy_swap as a backward-compatible alias.
-        self.declare_parameter('apply_gripper_frame_xy_swap', True)
+        self.declare_parameter('apply_gripper_frame_xy_swap', False)
         self.declare_parameter('apply_scene_replica_xy_swap', False)
 
         self.base_frame = self.get_parameter("base_frame").value
@@ -630,11 +630,11 @@ class GraspSAMCam2PoseServer(Node):
 
             p_out = Pose()
             # p_out.position.x = float(pos[0]) # 
-            p_out.position.x = float(pos[0]) - 0.04 # manual compensation in base frame
+            p_out.position.x = float(pos[0]) - 0.04 #  manual compensation in base frame of 0.04 is needed BEFORE fine tuning kortex TF to match color and depth
             p_out.position.y = float(pos[1]) # 
             # p_out.position.z = float(pos[2]) #
             # p_out.position.z = max(float(pos[2]), 0.15) # set min height as 0.15 (length from EEF frame to fingertip)
-            p_out.position.z = max(float(pos[2]), 0.15) + 0.10 # use z + 0.10 as the pregrasp pose
+            p_out.position.z = max(float(pos[2]), 0.15) # + 0.10 # use z + 0.10 as the pregrasp pose
             p_out.orientation.x = float(q_bp[0])
             p_out.orientation.y = float(q_bp[1])
             p_out.orientation.z = float(q_bp[2])
