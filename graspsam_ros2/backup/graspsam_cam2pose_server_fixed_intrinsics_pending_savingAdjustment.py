@@ -2,8 +2,6 @@
 import os
 import shlex
 import json
-import shutil
-import time
 import numpy as np
 import subprocess
 from pathlib import Path
@@ -165,23 +163,8 @@ class GraspSAMCam2PoseServer(Node):
         # conda env inside container
         self.conda_env = os.environ.get("GRASPSAM_CONDA_ENV", "GraspSAM")
 
-        # Host-side output root (where eval.py writes, visible on host via mount).
-        # These folders are created by the Docker container and may appear as
-        # root-owned/locked on the host.  The server below copies each newest run
-        # into compare_GraspSAM/results using the host ROS process, so the copied
-        # files are directly editable from Ubuntu.
+        # Host-side output root (where eval.py writes, visible on host via mount)
         self.host_output_root = Path(self.host_ws) / "src" / "graspsam_ros2" / "compare_GraspSAM" / "grasp_outputs"
-
-        default_results_root = Path(self.host_ws) / "src" / "graspsam_ros2" / "compare_GraspSAM" / "results"
-        self.declare_parameter("copy_outputs_to_results", _env_bool("GRASPSAM_COPY_OUTPUTS_TO_RESULTS", True))
-        self.declare_parameter("save_results_backup", _env_bool("GRASPSAM_SAVE_RESULTS_BACKUP", True))
-        self.declare_parameter("results_root", os.environ.get("GRASPSAM_RESULTS_ROOT", str(default_results_root)))
-        self.declare_parameter("realtime_results_dir", os.environ.get("GRASPSAM_REALTIME_RESULTS_DIR", str(default_results_root / "realtime")))
-
-        self.copy_outputs_to_results = bool(self.get_parameter("copy_outputs_to_results").value)
-        self.save_results_backup = bool(self.get_parameter("save_results_backup").value)
-        self.host_results_root = Path(str(self.get_parameter("results_root").value)).expanduser()
-        self.realtime_results_dir = Path(str(self.get_parameter("realtime_results_dir").value)).expanduser()
 
         # ------------------------------------------------------------------
         # ROS parameters for Gazebo vs Kinova Gen3
@@ -319,13 +302,6 @@ class GraspSAMCam2PoseServer(Node):
             f"{self.gripper_offset_ry_deg}, {self.gripper_offset_rz_deg}), "
             f"apply_gripper_frame_xy_swap={self.apply_gripper_frame_xy_swap}, "
             f"apply_scene_replica_xy_swap(alias)={self.apply_scene_replica_xy_swap}"
-        )
-        self.get_logger().info(
-            "Result publishing options: "
-            f"copy_outputs_to_results={self.copy_outputs_to_results}, "
-            f"save_results_backup={self.save_results_backup}, "
-            f"results_root='{self.host_results_root}', "
-            f"realtime_results_dir='{self.realtime_results_dir}'"
         )
 
         self.tf_buffer = tf2_ros.Buffer()
@@ -488,78 +464,6 @@ class GraspSAMCam2PoseServer(Node):
             return None
         subdirs.sort(key=lambda p: p.stat().st_mtime)
         return subdirs[-1]
-
-    def _chmod_tree_user_rw(self, path: Path):
-        """Make copied result folders convenient to browse/edit on the host.
-
-        The copies are created by this ROS process, so ownership should already be
-        the host user.  chmod is still applied to avoid preserving restrictive
-        file modes from Docker-created outputs.
-        """
-        try:
-            if path.is_dir():
-                os.chmod(path, 0o775)
-            elif path.exists():
-                os.chmod(path, 0o664)
-            for root, dirs, files in os.walk(path):
-                for d in dirs:
-                    try:
-                        os.chmod(Path(root) / d, 0o775)
-                    except Exception:
-                        pass
-                for f in files:
-                    try:
-                        os.chmod(Path(root) / f, 0o664)
-                    except Exception:
-                        pass
-        except Exception as e:
-            self.get_logger().warn(f"Could not chmod result copy '{path}': {e}")
-
-    def _copy_dir_contents_host_owned(self, src_dir: Path, dst_dir: Path):
-        """Copy a Docker-created output directory into a host-created folder."""
-        src_dir = Path(src_dir)
-        dst_dir = Path(dst_dir)
-        if not src_dir.is_dir():
-            raise RuntimeError(f"Source output directory does not exist: {src_dir}")
-
-        if dst_dir.exists():
-            shutil.rmtree(dst_dir)
-        dst_dir.mkdir(parents=True, exist_ok=True)
-
-        for child in src_dir.iterdir():
-            target = dst_dir / child.name
-            if child.is_dir():
-                shutil.copytree(child, target, symlinks=True)
-            else:
-                shutil.copy2(child, target)
-
-        self._chmod_tree_user_rw(dst_dir)
-
-    def _publish_latest_output_to_results(self, latest_dir: Path):
-        """Publish the newest Docker output into compare_GraspSAM/results.
-
-        Returns:
-            realtime_dir: stable folder for downstream FlexBE/plotter use
-            backup_dir: timestamped host-owned backup folder, or None
-        """
-        if not self.copy_outputs_to_results:
-            return latest_dir, None
-
-        self.host_results_root.mkdir(parents=True, exist_ok=True)
-
-        realtime_dir = self.realtime_results_dir
-        self._copy_dir_contents_host_owned(latest_dir, realtime_dir)
-
-        backup_dir = None
-        if self.save_results_backup:
-            # Prefer the eval.py run directory name.  Add a suffix only if needed.
-            backup_dir = self.host_results_root / latest_dir.name
-            if backup_dir.exists():
-                backup_dir = self.host_results_root / f"{latest_dir.name}_copy_{time.strftime('%Y%m%d_%H%M%S')}"
-            self._copy_dir_contents_host_owned(latest_dir, backup_dir)
-
-        self._chmod_tree_user_rw(self.host_results_root)
-        return realtime_dir, backup_dir
 
     def load_grasps_from_json(self, json_path: Path) -> List[Grasp]:
         """
@@ -808,15 +712,11 @@ class GraspSAMCam2PoseServer(Node):
                 response.output_dir = ""
                 return response
 
-            # Copy Docker-created output to host-owned results folders.  The
-            # stable realtime folder is what FlexBE and plotter use downstream.
-            results_dir, backup_dir = self._publish_latest_output_to_results(latest_dir)
+            # json_file = latest_dir / "sample_0_grasps.json"
 
-            # json_file = results_dir / "sample_0_grasps.json"
-
-            json_files = sorted(results_dir.glob("*_grasps.json"))
+            json_files = sorted(latest_dir.glob("*_grasps.json"))
             if not json_files:
-                raise RuntimeError(f"No *_grasps.json found in published results dir: {results_dir}")
+                raise RuntimeError("No *_grasps.json found")
 
             json_file = json_files[0]   # or loop over all
 
@@ -824,19 +724,15 @@ class GraspSAMCam2PoseServer(Node):
             if not json_file.exists():
                 response.success = False
                 response.message = (
-                    f"eval.py finished, but grasps.json not found in published results dir:\n{results_dir}\n"
-                    f"Original Docker output dir:\n{latest_dir}\n"
+                    f"eval.py finished, but grasps.json not found in:\n{latest_dir}\n"
                     f"STDOUT (first 500 chars):\n{proc.stdout[:500]}\n"
                     f"STDERR (first 500 chars):\n{proc.stderr[:500]}"
                 )
-                response.output_dir = str(results_dir)
+                response.output_dir = str(latest_dir)
                 return response
 
-            backup_msg = f"\nBackup copy: {backup_dir}" if backup_dir is not None else ""
             response.message = (
-                    f"eval.py finished, and grasps.json found in published results dir:\n{results_dir}\n"
-                    f"Original Docker output dir: {latest_dir}"
-                    f"{backup_msg}\n"
+                    f"eval.py finished, and grasps.json found in:\n{latest_dir}\n"
                 )
 
             # 4) Parse JSON -> list[Grasp.msg]
@@ -962,14 +858,12 @@ class GraspSAMCam2PoseServer(Node):
 
             # 5) Populate response
             response.success = True
-            response.output_dir = str(results_dir)
+            response.output_dir = str(latest_dir)
             response.message = (
                 "GraspSAM eval completed.\n"
                 f"Parsed grasps (total): {len(grasps_list)}\n"
                 f"Transformed grasps: {len(valid_indices)}\n"
-                f"Output dir: {results_dir}\n"
-                f"Original Docker output dir: {latest_dir}\n"
-                f"Backup copy: {backup_dir}\n"
+                f"Output dir: {latest_dir}\n"
                 f"STDOUT (first 300 chars):\n{proc.stdout[:300]}\n"
                 f"STDERR (first 300 chars):\n{proc.stderr[:300]}"
             )
