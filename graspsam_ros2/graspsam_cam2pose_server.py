@@ -46,7 +46,7 @@ ros2 run graspsam_ros2 graspsam_cam2pose_server --ros-args \
 - For Kinova Gen3 Real
 
 ros2 run graspsam_ros2 graspsam_cam2pose_server --ros-args \
-  -p base_frame:=base_link \
+  -p base_frame:=camera_color_frame \
   -p camera_frame:=camera_link \
   -p use_optical_to_ros_cam:=true \
   -p custom_no_gt:=1 \
@@ -188,7 +188,7 @@ class GraspSAMCam2PoseServer(Node):
 
 
         self.declare_parameter("base_frame", os.environ.get("GRASPSAM_BASE_FRAME", "base_link"))
-        self.declare_parameter("camera_frame", os.environ.get("GRASPSAM_CAMERA_FRAME", "camera_link")) # camera link resulted in OMPL grasp pose offset
+        self.declare_parameter("camera_frame", os.environ.get("GRASPSAM_CAMERA_FRAME", "camera_color_frame")) # camera link resulted in OMPL grasp pose offset
         # self.declare_parameter("camera_frame", os.environ.get("GRASPSAM_CAMERA_FRAME", "camera_depth_frame")) # try using camera_depth_frame instead
         # self.declare_parameter("camera_frame", os.environ.get("GRASPSAM_CAMERA_FRAME", "camera_compensate_frame")) # try using camera_depth_frame instead; worked well before adjusting kortex version of TF for color-depth mapping, not after
 
@@ -200,6 +200,8 @@ class GraspSAMCam2PoseServer(Node):
         self.declare_parameter('gripper_offset_rx_deg', 0.0)
         self.declare_parameter('gripper_offset_ry_deg', 0.0)
         self.declare_parameter('gripper_offset_rz_deg', 0.0)
+
+
 
         # Optional right-handed X/Y axis swap in the grasp/gripper frame.
         # A pure X<->Y swap is a reflection (det=-1), so this uses the same
@@ -229,6 +231,11 @@ class GraspSAMCam2PoseServer(Node):
             self.get_parameter('apply_scene_replica_xy_swap').value
         )
 
+
+        # A temporay bias to manually adjust eef position in base frame to resolve potential camera-to-base TF offset, camera mounting/extrinsic error, or end_effector_link / Robotiq grasp-center TCP offset
+        self.declare_parameter("base_y_offset", 0.018)
+        self.base_y_offset = float(self.get_parameter("base_y_offset").value)
+
         # ------------------------------------------------------------------
         # eval.py options exposed as ROS parameters.
         # This lets the same server work with the custom Jacquard-like Kinova
@@ -248,12 +255,20 @@ class GraspSAMCam2PoseServer(Node):
         # Camera intrinsics corresponding to the RGB-D image before your
         # Jacquard-like pad-to-square/resize step. For Kinova, set these from
         # the CameraInfo of the exact image stream/cropped image used by UOC.
-        self.declare_parameter("fx", _env_float("GRASPSAM_FX", 554.3827128226441))
-        self.declare_parameter("fy", _env_float("GRASPSAM_FY", 554.3827128226441))
-        self.declare_parameter("cx", _env_float("GRASPSAM_CX", 320.0))
-        self.declare_parameter("cy", _env_float("GRASPSAM_CY", 240.0))
-        self.declare_parameter("intr_w", _env_int("GRASPSAM_INTR_W", 640))
-        self.declare_parameter("intr_h", _env_int("GRASPSAM_INTR_H", 480))
+        # self.declare_parameter("fx", _env_float("GRASPSAM_FX", 554.3827128226441))
+        # self.declare_parameter("fy", _env_float("GRASPSAM_FY", 554.3827128226441))
+        # self.declare_parameter("cx", _env_float("GRASPSAM_CX", 320.0))
+        # self.declare_parameter("cy", _env_float("GRASPSAM_CY", 240.0))
+        # self.declare_parameter("intr_w", _env_int("GRASPSAM_INTR_W", 640))
+        # self.declare_parameter("intr_h", _env_int("GRASPSAM_INTR_H", 480))
+
+        self.declare_parameter("fx", _env_float("GRASPSAM_FX", 1297.673))
+        self.declare_parameter("fy", _env_float("GRASPSAM_FY", 1298.631))
+        self.declare_parameter("cx", _env_float("GRASPSAM_CX", 620.914))
+        self.declare_parameter("cy", _env_float("GRASPSAM_CY", 238.280))
+        self.declare_parameter("intr_w", _env_int("GRASPSAM_INTR_W", 1280))
+        self.declare_parameter("intr_h", _env_int("GRASPSAM_INTR_H", 720))
+
 
         self.eval_script = self.get_parameter("eval_script").value
         self.custom_no_gt = int(self.get_parameter("custom_no_gt").value)
@@ -618,8 +633,12 @@ class GraspSAMCam2PoseServer(Node):
             # Pose in camera frame as 4x4
             q = [p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w]
             T_cp = tft.quaternion_matrix(q)
-            T_cp[0, 3] = p.position.x
-            T_cp[1, 3] = p.position.y
+            # T_cp[0, 3] = p.position.x
+            # T_cp[1, 3] = p.position.y
+            # T_cp[2, 3] = p.position.z
+
+            T_cp[0, 3] = p.position.x # * 1.05 # temporary manual adjustment to resolve potentially camera intrinsics related kinova executionndisplacement
+            T_cp[1, 3] = p.position.y # * 1.05 # temporary manual adjustment to resolve potentially camera intrinsics related kinova executionndisplacement
             T_cp[2, 3] = p.position.z
 
             # base <- camera <- pose
@@ -629,12 +648,11 @@ class GraspSAMCam2PoseServer(Node):
             q_bp = tft.quaternion_from_matrix(T_bp)
 
             p_out = Pose()
-            # p_out.position.x = float(pos[0]) # 
-            p_out.position.x = float(pos[0]) - 0.04 #  manual compensation in base frame of 0.04 is needed BEFORE fine tuning kortex TF to match color and depth
-            p_out.position.y = float(pos[1]) # 
-            # p_out.position.z = float(pos[2]) #
-            # p_out.position.z = max(float(pos[2]), 0.15) # set min height as 0.15 (length from EEF frame to fingertip)
-            p_out.position.z = max(float(pos[2]), 0.15) # + 0.10 # use z + 0.10 as the pregrasp pose
+            p_out.position.x = float(pos[0]) # 
+            # p_out.position.x = float(pos[0]) - 0.04 #  manual compensation in base frame of 0.04 is needed BEFORE fine tuning kortex TF to match color and depth
+            p_out.position.y = float(pos[1]) + self.base_y_offset # MANUAL ADJUSTMENT IN BASE FRAME AFTER FIXED CAMERA INTRINSICS AND PADDING
+            p_out.position.z = max(float(pos[2]), 0.15) # set min height as 0.15 (length from EEF frame to fingertip)
+            # p_out.position.z = max(float(pos[2]), 0.15) + 0.10 # use z + 0.10 as the pregrasp pose
             p_out.orientation.x = float(q_bp[0])
             p_out.orientation.y = float(q_bp[1])
             p_out.orientation.z = float(q_bp[2])
