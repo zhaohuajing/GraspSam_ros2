@@ -173,18 +173,15 @@ class GraspSAMCam2PoseServer(Node):
         self.host_output_root = Path(self.host_ws) / "src" / "graspsam_ros2" / "compare_GraspSAM" / "grasp_outputs"
 
         default_results_root = Path(self.host_ws) / "src" / "graspsam_ros2" / "compare_GraspSAM" / "results"
-        default_backup_root = self.host_output_root
         self.declare_parameter("copy_outputs_to_results", _env_bool("GRASPSAM_COPY_OUTPUTS_TO_RESULTS", True))
         self.declare_parameter("save_results_backup", _env_bool("GRASPSAM_SAVE_RESULTS_BACKUP", True))
         self.declare_parameter("results_root", os.environ.get("GRASPSAM_RESULTS_ROOT", str(default_results_root)))
         self.declare_parameter("realtime_results_dir", os.environ.get("GRASPSAM_REALTIME_RESULTS_DIR", str(default_results_root / "realtime")))
-        self.declare_parameter("backup_results_root", os.environ.get("GRASPSAM_BACKUP_RESULTS_ROOT", str(default_backup_root)))
 
         self.copy_outputs_to_results = bool(self.get_parameter("copy_outputs_to_results").value)
         self.save_results_backup = bool(self.get_parameter("save_results_backup").value)
         self.host_results_root = Path(str(self.get_parameter("results_root").value)).expanduser()
         self.realtime_results_dir = Path(str(self.get_parameter("realtime_results_dir").value)).expanduser()
-        self.host_backup_results_root = Path(str(self.get_parameter("backup_results_root").value)).expanduser()
 
         # ------------------------------------------------------------------
         # ROS parameters for Gazebo vs Kinova Gen3
@@ -253,7 +250,7 @@ class GraspSAMCam2PoseServer(Node):
 
 
         # A temporay bias to manually adjust eef position in base frame to resolve potential camera-to-base TF offset, camera mounting/extrinsic error, or end_effector_link / Robotiq grasp-center TCP offset
-        self.declare_parameter("base_y_offset", 0.020)
+        self.declare_parameter("base_y_offset", 0.018)
         self.base_y_offset = float(self.get_parameter("base_y_offset").value)
 
         # ------------------------------------------------------------------
@@ -328,8 +325,7 @@ class GraspSAMCam2PoseServer(Node):
             f"copy_outputs_to_results={self.copy_outputs_to_results}, "
             f"save_results_backup={self.save_results_backup}, "
             f"results_root='{self.host_results_root}', "
-            f"realtime_results_dir='{self.realtime_results_dir}', "
-            f"backup_results_root='{self.host_backup_results_root}'"
+            f"realtime_results_dir='{self.realtime_results_dir}'"
         )
 
         self.tf_buffer = tf2_ros.Buffer()
@@ -539,65 +535,30 @@ class GraspSAMCam2PoseServer(Node):
 
         self._chmod_tree_user_rw(dst_dir)
 
-    def _make_docker_output_host_accessible(self, host_path: Path):
-        """Make a Docker-created bind-mounted output directory writable by the host user.
-
-        eval.py creates grasp_outputs/run_* inside Docker, which can make the
-        folders look locked on Ubuntu.  The container normally runs as root, so
-        use docker exec to chown/chmod the bind-mounted directory back to the
-        user running this ROS server.
-        """
-        host_path = Path(host_path)
-        if not host_path.exists():
-            return
-
-        try:
-            uid = os.getuid()
-            gid = os.getgid()
-            container_path = self._to_container_path(str(host_path))
-            cmd = [
-                "docker", "exec", self.container_name, "bash", "-lc",
-                (
-                    f"chown -R {uid}:{gid} {shlex.quote(container_path)} && "
-                    f"chmod -R u+rwX,go+rX {shlex.quote(container_path)}"
-                ),
-            ]
-            self._run(cmd, check=True)
-        except Exception as e:
-            self.get_logger().warn(
-                f"Could not make Docker output host-accessible for '{host_path}': {e}"
-            )
-
     def _publish_latest_output_to_results(self, latest_dir: Path):
-        """Publish the newest output.
-
-        - Keep timestamped run_* outputs under compare_GraspSAM/grasp_outputs.
-        - Only copy the stable realtime folder into compare_GraspSAM/results/realtime.
+        """Publish the newest Docker output into compare_GraspSAM/results.
 
         Returns:
             realtime_dir: stable folder for downstream FlexBE/plotter use
-            backup_dir: timestamped run_* folder under grasp_outputs, or None
+            backup_dir: timestamped host-owned backup folder, or None
         """
-        latest_dir = Path(latest_dir)
-
-        backup_dir = None
-        if self.save_results_backup:
-            self.host_backup_results_root.mkdir(parents=True, exist_ok=True)
-            # eval.py already writes run_* under grasp_outputs.  Make that folder
-            # host-accessible instead of copying timestamped backups into results/.
-            backup_dir = latest_dir
-            self._make_docker_output_host_accessible(backup_dir)
-
         if not self.copy_outputs_to_results:
-            return latest_dir, backup_dir
+            return latest_dir, None
 
         self.host_results_root.mkdir(parents=True, exist_ok=True)
 
         realtime_dir = self.realtime_results_dir
         self._copy_dir_contents_host_owned(latest_dir, realtime_dir)
 
-        # Keep results/ clean except for results/realtime.
-        self._chmod_tree_user_rw(realtime_dir)
+        backup_dir = None
+        if self.save_results_backup:
+            # Prefer the eval.py run directory name.  Add a suffix only if needed.
+            backup_dir = self.host_results_root / latest_dir.name
+            if backup_dir.exists():
+                backup_dir = self.host_results_root / f"{latest_dir.name}_copy_{time.strftime('%Y%m%d_%H%M%S')}"
+            self._copy_dir_contents_host_owned(latest_dir, backup_dir)
+
+        self._chmod_tree_user_rw(self.host_results_root)
         return realtime_dir, backup_dir
 
     def load_grasps_from_json(self, json_path: Path) -> List[Grasp]:
@@ -783,9 +744,11 @@ class GraspSAMCam2PoseServer(Node):
             q_bp = tft.quaternion_from_matrix(T_bp)
 
             p_out = Pose()
-            p_out.position.x = float(pos[0]) 
+            p_out.position.x = float(pos[0]) # 
+            # p_out.position.x = float(pos[0]) - 0.04 #  manual compensation in base frame of 0.04 is needed BEFORE fine tuning kortex TF to match color and depth
             p_out.position.y = float(pos[1]) + self.base_y_offset # MANUAL ADJUSTMENT IN BASE FRAME AFTER FIXED CAMERA INTRINSICS AND PADDING
             p_out.position.z = max(float(pos[2]), 0.15) # set min height as 0.15 (length from EEF frame to fingertip)
+            # p_out.position.z = max(float(pos[2]), 0.15) + 0.10 # use z + 0.10 as the pregrasp pose
             p_out.orientation.x = float(q_bp[0])
             p_out.orientation.y = float(q_bp[1])
             p_out.orientation.z = float(q_bp[2])
@@ -845,8 +808,8 @@ class GraspSAMCam2PoseServer(Node):
                 response.output_dir = ""
                 return response
 
-            # Publish latest output: keep run_* under grasp_outputs, and copy only
-            # the stable realtime folder into results/realtime for FlexBE/plotter.
+            # Copy Docker-created output to host-owned results folders.  The
+            # stable realtime folder is what FlexBE and plotter use downstream.
             results_dir, backup_dir = self._publish_latest_output_to_results(latest_dir)
 
             # json_file = results_dir / "sample_0_grasps.json"
@@ -869,7 +832,7 @@ class GraspSAMCam2PoseServer(Node):
                 response.output_dir = str(results_dir)
                 return response
 
-            backup_msg = f"\nTimestamped run folder: {backup_dir}" if backup_dir is not None else ""
+            backup_msg = f"\nBackup copy: {backup_dir}" if backup_dir is not None else ""
             response.message = (
                     f"eval.py finished, and grasps.json found in published results dir:\n{results_dir}\n"
                     f"Original Docker output dir: {latest_dir}"
