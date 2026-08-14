@@ -253,7 +253,7 @@ class GraspSAMCam2PoseServer(Node):
 
 
         # A temporay bias to manually adjust eef position in base frame to resolve potential camera-to-base TF offset, camera mounting/extrinsic error, or end_effector_link / Robotiq grasp-center TCP offset
-        self.declare_parameter("base_y_offset", 0.020)
+        self.declare_parameter("base_y_offset", 0.022)
         self.base_y_offset = float(self.get_parameter("base_y_offset").value)
 
         # ------------------------------------------------------------------
